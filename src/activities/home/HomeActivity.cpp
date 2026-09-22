@@ -2,6 +2,8 @@
 
 #include <Bitmap.h>
 #include <Epub.h>
+#include <esp_ota_ops.h>
+#include <esp_system.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
@@ -23,7 +25,7 @@
 #include "fontIds.h"
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 4;  // File Browser, Library, File transfer, Settings
+  int count = 5;  // File Browser, Library, File transfer, Settings, Tag Mode
   if (!recentBooks.empty()) {
     count += recentBooks.size();
   }
@@ -169,6 +171,8 @@ void HomeActivity::freeCoverBuffer() {
 }
 
 void HomeActivity::loop() {
+  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+
   const int menuCount = getMenuItemCount();
   const auto& metrics = UITheme::getInstance().getMetrics();
 
@@ -193,6 +197,9 @@ void HomeActivity::loop() {
         break;
       case HomeMenuItem::SETTINGS_MENU:
         onSettingsOpen();
+        break;
+      case HomeMenuItem::TAG_MODE:
+        showTagModePopup();
         break;
       default:
         break;
@@ -306,8 +313,8 @@ void HomeActivity::render(RenderLock&&) {
 
   // Build menu items dynamically
   std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_LIBRARY), tr(STR_FILE_TRANSFER),
-                                        tr(STR_SETTINGS_TITLE)};
-  std::vector<UIIcon> menuIcons = {Folder, Library, Transfer, Settings};
+                                        tr(STR_SETTINGS_TITLE), tr(STR_TAG_MODE)};
+  std::vector<UIIcon> menuIcons = {Folder, Library, Transfer, Settings, Tag};
 
   if (hasOpdsServers) {
     menuItems.insert(menuItems.begin() + 2, tr(STR_OPDS_BROWSER));
@@ -333,6 +340,7 @@ void HomeActivity::render(RenderLock&&) {
   const auto labels = mappedInput.mapLabels(recentBooks.empty() ? "" : tr(STR_RESUME), tr(STR_SELECT), tr(STR_DIR_UP),
                                             tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  if (optionPopup.processRender(renderer, mappedInput)) return;
 
   renderer.displayBuffer(cleanInitialRefresh && !firstRenderDone ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
 
@@ -356,3 +364,34 @@ void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
 void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
+
+bool HomeActivity::swapBootSlot() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
+  if (!target || target == running) return false;
+  esp_app_desc_t desc{};
+  if (esp_ota_get_partition_description(target, &desc) != ESP_OK) return false;
+  return esp_ota_set_boot_partition(target) == ESP_OK;
+}
+void HomeActivity::showTagModePopup() {
+  if (optionPopup.isActive()) return;
+
+  esp_app_desc_t desc{};
+  const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
+  const bool valid = target && esp_ota_get_partition_description(target, &desc) == ESP_OK;
+
+  std::string headline = valid ? std::string(desc.version) : std::string(tr(STR_ERROR));
+  const char* const OPTIONS[] = {tr(STR_CANCEL), tr(STR_CONFIRM)};
+  optionPopup.show(tr(STR_TAG_MODE), headline.c_str(), OPTIONS, valid ? 2 : 1, 0, [this](const int index) {
+    if (index != 1) return;
+    if (!swapBootSlot()) {
+      LOG_ERR("HOME", "boot slot swap failed");
+      return;
+    }
+    GUI.drawPopup(renderer, tr(STR_LOADING_POPUP));
+    renderer.displayBuffer();
+    delay(500);
+    esp_restart();
+  });
+  requestUpdate();
+}

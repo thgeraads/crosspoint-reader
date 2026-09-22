@@ -268,6 +268,10 @@ void ActivityManager::goToBrowser() {
   }
 }
 
+void ActivityManager::goToTagMode() {
+  replaceActivity(std::make_unique<OpdsServerListActivity>(renderer, mappedInput, false));
+}
+
 void ActivityManager::goToReader(std::string path, const bool allowFastInitialRefresh) {
   if (path.empty()) {
     goToFileBrowser("/");

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <functional>
 #include <vector>
 
@@ -6,6 +7,7 @@
 #include "RecentBooksStore.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
+#include "components/OptionPopup.h"
 
 struct Rect;
 
@@ -28,8 +30,10 @@ class HomeActivity final : public Activity {
   int coverRectW = 0;
   int coverRectH = 0;
   std::vector<RecentBook> recentBooks;
+  OptionPopup optionPopup;
   const HomeMenuItem initialMenuItem;
   const bool cleanInitialRefresh;
+ 
 
   // Convert HomeMenuItem to menu index (used in onEnter)
   static int menuItemToIndex(HomeMenuItem item, bool hasOpdsUrl) {
@@ -43,6 +47,9 @@ class HomeActivity final : public Activity {
     if (item == HomeMenuItem::FILE_TRANSFER) return i;
     ++i;
     if (item == HomeMenuItem::SETTINGS_MENU) return i;
+    ++i;
+    if (item == HomeMenuItem::TAG_MODE) return i;
+  
     return 0;
   }
 
@@ -53,7 +60,8 @@ class HomeActivity final : public Activity {
     if (idx == i++) return HomeMenuItem::LIBRARY;
     if (hasOpdsUrl && idx == i++) return HomeMenuItem::OPDS_BROWSER;
     if (idx == i++) return HomeMenuItem::FILE_TRANSFER;
-    if (idx == i) return HomeMenuItem::SETTINGS_MENU;
+    if (idx == i++) return HomeMenuItem::SETTINGS_MENU;
+    if (idx == i) return HomeMenuItem::TAG_MODE;
     return HomeMenuItem::NONE;
   }
   void onSelectBook(const std::string& path);
@@ -62,7 +70,8 @@ class HomeActivity final : public Activity {
   void onSettingsOpen();
   void onFileTransferOpen();
   void onOpdsBrowserOpen();
-
+  void showTagModePopup();
+  bool swapBootSlot();
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image
   bool restoreCoverBuffer();  // Restore frame buffer from stored cover
